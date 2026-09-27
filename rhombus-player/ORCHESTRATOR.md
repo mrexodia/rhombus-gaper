@@ -28,6 +28,40 @@ The optional private answer file is a JSON object:
 
 Missing/null answers never produce a correct fixture candidate. The fixture helper reads the 16 committed organizer YAML definitions in their current simple format; it is not a solver or general YAML parser. Test answers are passed only to fake workers through stdin, never inserted into downloaded challenge manifests.
 
+## Live web command center
+
+Launch **Signal // Command** in a separate terminal, pointing it at the same run folder:
+
+```powershell
+python rhombus-player/demo_dashboard.py --run-dir "$env:TEMP\ctf-run-001" --open
+```
+
+The dashboard binds only to `127.0.0.1:8765`. `--port 0` picks a free port. It prints a private token-bearing browser link; `--open` opens that link automatically. You can start it **before** the orchestrator—the dashboard does not create the run folder—or inspect a finished run afterward.
+
+Features:
+
+- One-second live updates, challenge matrix, confirmed solves, and artifact counts.
+- Active worker races with profile names and process IDs.
+- Actual queued vs in-flight candidate submissions, including manual inbox requests.
+- Accepted/rejected/error/unknown outcomes, full response messages, and review filters.
+- Shared cooldown indicator, 429 counts, submission activity graph, and latest 300 events.
+- Search, pause/resume, expandable submission history, and responsive desktop/mobile layouts.
+- Flags masked **in API responses** by default. Explicit **Reveal flags** fetches them; hiding the tab re-masks the view.
+
+This dashboard is **read-only**. Pausing the feed does not pause workers. Continue using the CLI for manual submissions; the web ledger observes them. It cannot launch agents, execute artifacts, stop workers, or change platform configuration.
+
+Access/security details:
+
+- A fresh random access token is required for telemetry, including revealed flags. Keep the printed link private.
+- The fragment token is removed from the address bar and stored in browser session storage for that tab. Restarting the dashboard rotates its token.
+- No external scripts/fonts/CDNs, no cross-origin API access, no arbitrary run-file download endpoint, no platform credentials in the dashboard.
+- Organizer text is rendered as text, not HTML. Responses are `no-store` and protected with a restrictive CSP.
+- This is a local operator tool, **not** a public multi-user service. Do not expose it through a reverse proxy or share revealed screenshots.
+
+New runs publish a heartbeat every second. After five seconds without it, the dashboard marks the run stale and process/submission outcomes unconfirmed. Old completed runs remain readable; old active runs without heartbeat telemetry are intentionally shown as stale. Last-known state is not proof of process liveness.
+
+The dashboard reads existing journals; it never consumes or modifies them. Files above 16 MiB are refused with a warning rather than silently truncated. A malformed/partial final journal line produces a warning and is retried on the next poll.
+
 ## Scheduling and configuration
 
 1. Authenticate and sort visible challenges by stable ID.
@@ -95,7 +129,7 @@ python rhombus-player/rhombus_player.py submit ticket-trouble
 python rhombus-player/demo_orchestrator.py review --run-dir "$env:TEMP\ctf-run-001"
 ```
 
-Each network submission has a flushed/fsynced `pending` journal entry containing the challenge key and candidate **before** the request begins, followed by a result entry. Review lists errors and intents without durable results, plus manual inbox requests without responses. A connection failure can occur after the server accepts a flag: check platform solve state before retrying. Manual requests appearing in both the inbox and journal may be shown twice; inspect their request IDs before resubmitting.
+Each candidate has a flushed/fsynced `queued` entry before waiting for its challenge lock, then a `pending` entry **before** the network request begins, followed by a result entry. Each intent contains the challenge key and candidate. Review lists errors and intents without durable results, plus manual inbox requests without responses. A connection failure can occur after the server accepts a flag: check platform solve state before retrying. Manual requests appearing in both the inbox and journal may be shown twice; inspect their request IDs before resubmitting.
 
 Submission failures also print the candidate to operator stderr. Do not send this stream to player-visible logs.
 
@@ -104,6 +138,8 @@ Run directory:
 ```text
 run.json                 run state and stable challenge keys
 summary.json             solved / unsolved / needs_review / error / interrupted
+catalog.json             player-visible inventory, available before downloads finish
+live.json                heartbeat and current challenge states (no credentials/flags)
 challenges/<ID hash>/    challenge.json plus indexed attachments
 inbox/                   private manual candidate requests
 outbox/                  corresponding structured responses
@@ -157,4 +193,15 @@ One request is outstanding per worker; stdout is protocol-only. A winning respon
 python -m unittest discover -s rhombus-player -p "test_*.py" -v
 ```
 
-Tests cover concurrent/streaming downloads, subprocess races and cleanup, manual acceptance, seeded plans, timeout/cancellation, review persistence, HTTP-200 application errors, bounded 429 retries/shared cooldowns, and remote/redirect refusal. They use temporary folders and a loopback mock server, not the running demo's database.
+Tests cover concurrent/streaming downloads, subprocess races and cleanup, visible submission queues, manual acceptance, seeded plans, timeout/cancellation, review persistence, HTTP-200 application errors, bounded 429 retries/shared cooldowns, remote/redirect refusal, and dashboard authentication/redaction/staleness. They use temporary folders and loopback servers, not the running demo's database.
+
+Optional real-browser checks require the development-only Python `playwright` package and a Chromium-based browser. Neither is a runtime dependency:
+
+```powershell
+$env:RHOMBUS_BROWSER_TESTS = "1"
+$env:RHOMBUS_BROWSER_EXE = "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+$env:RHOMBUS_DASHBOARD_SCREENSHOTS = "$env:TEMP\rhombus-dashboard-preview"
+python -m unittest discover -s rhombus-player -p "test_*.py" -v
+```
+
+Browser tests verify live updates, filters, masking/reveal, inert organizer HTML, CSP compatibility, and desktop/mobile overflow. Screenshots contain only test fixtures; they are not added to Git.

@@ -86,7 +86,7 @@ class Journal:
 
     def record(self, kind, **fields):
         # Candidate flags go only to submissions.jsonl, not the general event log.
-        name = "submissions.jsonl" if kind in {"pending", "result"} else "events.jsonl"
+        name = "submissions.jsonl" if kind in {"queued", "pending", "result"} else "events.jsonl"
         with self.lock:
             fd = os.open(self.root / name, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
             with os.fdopen(fd, "a", encoding="utf-8") as stream:
@@ -175,17 +175,28 @@ class Orchestrator:
     async def _submit(self, key, flag, worker, request_id):
         if key not in self.challenges or not isinstance(flag, str) or not 0 < len(flag) <= 4096:
             return {"request_id": request_id, "status": "error", "message": "invalid submission"}
+        result = {"request_id": request_id, "challenge_key": key}
+        ticket = uuid.uuid4().hex
+
+        def notify_review(error):
+            self.review.add(key)
+            print(f"Manual review: {json.dumps({'challenge_key': key, 'flag': flag, 'error': str(error)})}",
+                  file=sys.stderr, flush=True)
+
+        try:
+            self.journal.record("queued", ticket=ticket, challenge_key=key, flag=flag,
+                                worker=worker, request_id=request_id)
+        except OSError as error:
+            notify_review(error)
+            return {**result, "status": "error", "message": "journal failure; submission not sent"}
         async with self.locks[key]:
-            result = {"request_id": request_id, "challenge_key": key}
             if self.solved[key].is_set():
-                return {**result, "status": "already_solved", "message": "race finished"}
-            ticket = uuid.uuid4().hex
-
-            def notify_review(error):
-                self.review.add(key)
-                print(f"Manual review: {json.dumps({'challenge_key': key, 'flag': flag, 'error': str(error)})}",
-                      file=sys.stderr, flush=True)
-
+                result.update(status="already_solved", message="race finished; candidate not validated")
+                try:
+                    self.journal.record("result", ticket=ticket, **result)
+                except OSError as error:
+                    notify_review(error)
+                return result
             try:
                 self.journal.record("pending", ticket=ticket, challenge_key=key, flag=flag,
                                     worker=worker, request_id=request_id)
@@ -214,9 +225,12 @@ class Orchestrator:
                     notify_review(error)
             return result
 
-    async def download(self, attachment, destination):
+    async def download(self, attachment, destination, key):
         async with self.download_slots:
+            self.journal.record("download_started", challenge_key=key, file=destination.name)
             await asyncio.to_thread(self.api.download_attachment, attachment, destination)
+            self.journal.record("download_finished", challenge_key=key, file=destination.name,
+                                bytes=destination.stat().st_size)
 
     async def challenge(self, challenge):
         key = challenge.id
@@ -226,7 +240,7 @@ class Orchestrator:
         try:
             files = [folder / f"{index:03d}-{_safe_filename(a.name)}"
                      for index, a in enumerate(challenge.attachments)]
-            await asyncio.gather(*(self.download(a, path) for a, path in zip(challenge.attachments, files)))
+            await asyncio.gather(*(self.download(a, path, key) for a, path in zip(challenge.attachments, files)))
             manifest = {"version": 1, "challenge_key": key, "challenge": challenge.to_dict(),
                         "folder": str(folder.resolve()), "files": [str(path.resolve()) for path in files]}
             private_json(folder / "challenge.json", manifest)
@@ -334,6 +348,11 @@ class Orchestrator:
                 private_json(self.root / "outbox" / path.name, response)
             await asyncio.sleep(0.1)
 
+    async def heartbeat(self):
+        while not self.closing:
+            private_json(self.root / "live.json", {"time": time.time(), "pid": os.getpid(), "states": self.states})
+            await asyncio.sleep(1)
+
     async def run(self):
         challenges = sorted(await asyncio.to_thread(self.api.challenges), key=lambda c: c.id)
         if len({c.id for c in challenges}) != len(challenges):
@@ -343,8 +362,10 @@ class Orchestrator:
             self.solved[c.id] = asyncio.Event()
             self.locks[c.id] = asyncio.Lock()
             self.states[c.id] = {"status": "downloading"}
+        private_json(self.root / "catalog.json", [c.to_dict() for c in challenges])
         private_json(self.root / "run.json", {"status": "running", "source": self.api.base_url,
                                               "challenge_keys": list(self.challenges)})
+        pulse = asyncio.create_task(self.heartbeat())
         inbox = asyncio.create_task(self.manual_inbox())
         tasks = [asyncio.create_task(self.challenge(c)) for c in challenges]
         try:
@@ -352,9 +373,10 @@ class Orchestrator:
         finally:
             self.closing = True
             inbox.cancel()
+            pulse.cancel()
             for task in tasks:
                 task.cancel()
-            await asyncio.gather(inbox, *tasks, return_exceptions=True)
+            await asyncio.gather(inbox, pulse, *tasks, return_exceptions=True)
             # A started POST can still complete after its worker exits. Preserve its outcome.
             if self.submissions:
                 await asyncio.gather(*list(self.submissions), return_exceptions=True)
@@ -399,7 +421,7 @@ def review_candidates(root):
             except json.JSONDecodeError:
                 print("Warning: incomplete journal line; inspect submissions.jsonl", file=sys.stderr)
                 continue
-            if item["event"] == "pending":
+            if item["event"] in {"queued", "pending"}:
                 pending[item["ticket"]] = item
             elif item["event"] == "result":
                 results[item["ticket"]] = item

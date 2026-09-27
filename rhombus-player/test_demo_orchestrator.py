@@ -70,6 +70,12 @@ class SimulatorTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(review_candidates(root))
             self.assertIn("Manual review", errors.getvalue())
             self.assertFalse(runner.children)
+            from demo_dashboard import Snapshot
+            snapshot = Snapshot(root).build()
+            self.assertEqual(snapshot["run_status"], "stopped")
+            self.assertFalse(snapshot["workers"])
+            self.assertEqual(snapshot["counts"]["correct"], 1)
+            self.assertFalse(snapshot["counts"].get("unknown", 0))
             self.assertEqual(sum(flag == "fixture-answer" for _, flag in api.calls), 1)
             self.assertEqual(api.downloads_peak, 2)
             events = [json.loads(line) for line in (root / "events.jsonl").read_text().splitlines()]
@@ -79,11 +85,44 @@ class SimulatorTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(sum(e["event"] == "worker_started" for e in events),
                              sum(e["event"] == "worker_stopped" for e in events))
             journal = [json.loads(line) for line in (root / "submissions.jsonl").read_text().splitlines()]
-            pending = {e["ticket"] for e in journal if e["event"] == "pending"}
+            pending = {e["ticket"] for e in journal if e["event"] in {"queued", "pending"}}
             results = {e["ticket"] for e in journal if e["event"] == "result"}
             self.assertEqual(pending, results)
             self.assertTrue(any(e.get("status") == "error" for e in journal))
             self.assertTrue(all("fixture-answer" not in p.read_text() for p in root.glob("challenges/*/challenge.json")))
+
+    async def test_candidates_are_visible_while_waiting_for_submission_lock(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            workspace(root)
+            api = MockAPI(root, [])
+            runner = Orchestrator(api, root)
+            runner.challenges["key"] = Challenge("key", "Key", "misc", "")
+            runner.solved["key"] = asyncio.Event()
+            runner.locks["key"] = asyncio.Lock()
+            started, release = threading.Event(), threading.Event()
+
+            def delayed_submit(key, flag):
+                started.set()
+                release.wait(5)
+                return SubmissionResult(False, "Incorrect flag")
+
+            api.submit_flag = delayed_submit
+            first = asyncio.create_task(runner.submit("key", "first", "steady", "1"))
+            second = None
+            try:
+                self.assertTrue(await asyncio.to_thread(started.wait, 2))
+                second = asyncio.create_task(runner.submit("key", "second", "burst", "2"))
+                for _ in range(100):
+                    rows = [json.loads(line) for line in (root / "submissions.jsonl").read_text().splitlines()]
+                    if sum(r["event"] == "queued" for r in rows) == 2:
+                        break
+                    await asyncio.sleep(0.01)
+                self.assertEqual(sum(r["event"] == "queued" for r in rows), 2)
+                self.assertEqual(sum(r["event"] == "pending" for r in rows), 1)
+            finally:
+                release.set()
+                await asyncio.gather(*(task for task in (first, second) if task is not None))
 
     async def test_manual_submission_stops_active_workers(self):
         with tempfile.TemporaryDirectory() as directory:

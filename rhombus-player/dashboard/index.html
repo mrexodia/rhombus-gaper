@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Signal // Command</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="ambient" aria-hidden="true"></div>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Signal Command home"><span class="brand-mark">◈</span> SIGNAL<span class="muted">//</span>COMMAND</a>
+    <div class="top-meta"><span class="pill">LOCAL SIMULATION</span><span id="clock">--:--:-- UTC</span></div>
+  </header>
+  <section id="auth" class="auth-panel" hidden>
+    <span class="eyebrow">OPERATOR AUTHORIZATION</span>
+    <h1>Establish uplink.</h1>
+    <p>Open the private link printed by the dashboard, or enter its access token. This is not your Rhombus password.</p>
+    <form id="auth-form"><label for="access-token">Dashboard access token</label><input id="access-token" type="password" autocomplete="off" required><button type="submit" class="primary">Connect →</button></form>
+    <p id="auth-message" role="status"></p>
+  </section>
+  <main id="main">
+    <section class="hero">
+      <div><div class="eyebrow"><span class="signal-dot"></span> SIMULATION OPERATIONS / TELEMETRY V1</div><h1>Eyes on <span>everything.</span></h1><p id="run-label">Waiting for telemetry…</p></div>
+      <div class="hero-controls"><div id="connection" class="connection">CONNECTING</div><div class="button-row"><button id="pause" type="button">Pause feed</button><label class="toggle"><input id="reveal" type="checkbox"> Reveal flags</label></div><span id="updated" class="small muted">Read-only operator console</span></div>
+    </section>
+    <div id="notice" class="notice" role="status" hidden></div>
+    <section class="metrics" aria-label="Run metrics">
+      <article><span class="metric-label">OBJECTIVES</span><strong id="m-objectives">—</strong><span id="m-objectives-sub">Awaiting inventory</span><progress id="completion" max="1" value="0" aria-label="Solved objectives"></progress></article>
+      <article><span class="metric-label">ACTIVE WORKERS</span><strong id="m-workers" class="cyan">—</strong><span id="m-workers-sub">Subprocess races</span></article>
+      <article><span class="metric-label">SUBMISSION QUEUE</span><strong id="m-queue">—</strong><span id="m-queue-sub">Queued + in flight</span></article>
+      <article><span class="metric-label">OPERATOR REVIEW</span><strong id="m-errors" class="amber">—</strong><span>Errors + unknown outcomes</span></article>
+      <article><span class="metric-label">ARTIFACTS</span><strong id="m-files">—</strong><span>Completed file transfers</span></article>
+      <article><span class="metric-label">RATE-LIMIT HITS</span><strong id="m-rates">—</strong><span id="m-rates-sub">Shared request gate</span></article>
+    </section>
+    <section class="workspace">
+      <div class="objectives-panel panel"><div class="section-heading"><div><span class="eyebrow">01 / CHALLENGE MATRIX</span><h2>Parallel objectives <span id="challenge-total" class="count"></span></h2></div><label class="search"><span class="sr-only">Search challenges and submissions</span><input id="search" type="search" placeholder="Filter by challenge…" autocomplete="off"></label></div><div id="challenges" class="challenge-grid"><div class="empty">Waiting for the orchestrator to publish its challenge inventory.</div></div></div>
+      <aside class="right-rail">
+        <section class="panel gate-panel"><div class="section-heading"><div><span class="eyebrow">02 / REQUEST CONTROL</span><h2>Admission gate</h2></div><span id="gate-state" class="badge ready">IDLE</span></div><svg id="traffic" viewBox="0 0 320 66" role="img" aria-label="Submissions per five-second interval"><path id="traffic-path" d="M0 62 L320 62"></path></svg><div class="gate-caption"><span id="gate-caption">5-second submission buckets</span><span class="green">GLOBAL COOLDOWN</span></div></section>
+        <section class="panel workers-panel"><div class="section-heading"><div><span class="eyebrow">03 / PROCESS TELEMETRY</span><h2>Worker races</h2></div><span id="worker-count" class="count">0</span></div><div id="workers" class="workers"><div class="empty">No worker processes observed.</div></div></section>
+      </aside>
+    </section>
+    <section class="panel submissions-panel">
+      <div class="section-heading"><div><span class="eyebrow">04 / CANDIDATE PIPELINE</span><h2>Submission ledger <span id="submission-count" class="count">0</span></h2></div><div class="filters" role="group" aria-label="Filter submissions"><button data-filter="all" aria-pressed="true">All</button><button data-filter="queue" aria-pressed="false">Queue</button><button data-filter="review" aria-pressed="false">Needs review</button><button data-filter="correct" aria-pressed="false">Accepted</button></div></div>
+      <div class="table-scroll"><table><thead><tr><th>Time</th><th>Challenge / worker</th><th>Candidate flag</th><th>Outcome</th><th>Response</th></tr></thead><tbody id="submissions"></tbody></table><div id="no-submissions" class="empty">No candidate submissions yet.</div></div><div class="panel-footer"><span id="ledger-note">Flags masked · no changes are sent to the platform</span><button id="load-more" type="button" hidden>Show 100 more</button></div>
+    </section>
+    <section class="panel events-panel"><div class="section-heading"><div><span class="eyebrow">05 / SYSTEM BUS</span><h2>Live event stream</h2></div><span id="event-count" class="small muted">LATEST 300 EVENTS</span></div><div id="events" class="events" tabindex="0" aria-label="Live event stream"><div class="empty">Listening for telemetry…</div></div></section>
+    <footer><span><span class="signal-dot"></span> SIGNAL RIDGE / OPERATOR CONSOLE</span><span>LOOPBACK ONLY · FIXED FAKE WORKERS · READ-ONLY</span></footer>
+  </main>
+</body>
+</html>
