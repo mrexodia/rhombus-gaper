@@ -41,18 +41,21 @@ The dashboard binds only to `127.0.0.1:8765`. `--port 0` picks a free port. It p
 Features:
 
 - One-second live updates, challenge matrix, confirmed solves, and artifact counts.
-- Active worker races with profile names and process IDs.
+- Active worker races plus history: profile names, PIDs, start/exit times, exit codes, and stop reasons.
+- Confirmed operator controls to stop one worker, a challenge's race, or all workers.
 - Actual queued vs in-flight candidate submissions, including manual inbox requests.
 - Accepted/rejected/error/unknown outcomes, full response messages, and review filters.
-- Shared cooldown indicator, 429 counts, submission activity graph, and latest 300 events.
+- Shared cooldown indicator, 429 counts, HTTP request activity graph, and latest 300 events.
+- A searchable request/response inspector with per-attempt IDs, timings, sanitized headers/body previews, and submission correlation.
 - Search, pause/resume, expandable submission history, and responsive desktop/mobile layouts.
 - Flags masked **in API responses** by default. Explicit **Reveal flags** fetches them; hiding the tab re-masks the view.
 
-This dashboard is **read-only**. Pausing the feed does not pause workers. Continue using the CLI for manual submissions; the web ledger observes them. It cannot launch agents, execute artifacts, stop workers, or change platform configuration.
+The dashboard has **scoped stop controls**, not arbitrary process administration. Pausing the feed does not pause workers. Continue using the CLI for manual flag submissions; the web ledger observes them. The dashboard cannot launch/restart agents, run commands, execute artifacts, change platform configuration, or kill unrelated OS processes.
 
 Access/security details:
 
-- A fresh random access token is required for telemetry, including revealed flags. Keep the printed link private.
+- A fresh random access token is required for telemetry, revealed flags, and stop controls. Keep the printed link private.
+- Control POSTs require the exact same origin, JSON, an authenticated token, a live heartbeat, and an allowlisted action. Single-worker stops require the current challenge key, worker ID, and exact PID.
 - The fragment token is removed from the address bar and stored in browser session storage for that tab. Restarting the dashboard rotates its token.
 - No external scripts/fonts/CDNs, no cross-origin API access, no arbitrary run-file download endpoint, no platform credentials in the dashboard.
 - Organizer text is rendered as text, not HTML. Responses are `no-store` and protected with a restrictive CSP.
@@ -60,7 +63,33 @@ Access/security details:
 
 New runs publish a heartbeat every second. After five seconds without it, the dashboard marks the run stale and process/submission outcomes unconfirmed. Old completed runs remain readable; old active runs without heartbeat telemetry are intentionally shown as stale. Last-known state is not proof of process liveness.
 
-The dashboard reads existing journals; it never consumes or modifies them. Files above 16 MiB are refused with a warning rather than silently truncated. A malformed/partial final journal line produces a warning and is retried on the next poll.
+The dashboard reads existing journals; it never consumes or modifies them. Control requests are atomically written to a separate inbox for the orchestrator to validate and acknowledge. Files above 16 MiB are refused with a warning rather than silently truncated. A malformed/partial final journal line produces a warning and is retried on the next poll.
+
+### Operator stop controls
+
+- **Stop worker:** stop only the selected `(challenge, worker, PID)` subprocess. Other workers keep racing.
+- **Stop race:** stop current workers and suppress queued/future worker starts for that challenge.
+- **Stop all workers:** stop current workers and suppress all remaining worker starts for the run. Downloads continue; this is not an immediate shutdown of the orchestrator.
+- **Show history:** retain observed exits and reasons (`operator_stop`, `challenge_solved`, `timeout`, `error`, etc.) after workers disappear from the active list.
+
+Each action requires browser confirmation. The **Stop requests** panel distinguishes `queued`, `acknowledged`, `completed`, `rejected`, and `unknown`. A queued request is **not** confirmation that a process stopped. Completion is derived from the orchestrator's acknowledgement plus observed exits of matched workers. A stale dashboard disables controls. Old runs without the new control protocol are observation-only.
+
+The orchestrator signals only its own fixed fake-worker handles, terminates/reaps those subprocesses, and records their exits. It suppresses unsent queued candidates from stopped workers and cancels requests still waiting at request admission. **Already-admitted/in-flight requests can still complete or be accepted after the worker stops.** Their results are drained and preserved; a late accepted flag still marks the challenge solved. Downloads and manual operator submissions are not cancelled by worker-stop controls. There is no resume/restart action; use a new run if needed.
+
+### HTTP troubleshooting
+
+The **Requests & responses** panel traces requests made by this orchestrator to Rhombus, not traffic from other clients and not the dashboard's polling requests. It is not a packet capture or a full server access log. New runs record:
+
+- Method, path (query values omitted), sanitized form field names and headers.
+- Request/response timestamps, admission wait, time to response headers, total duration, and bytes consumed.
+- HTTP status, safe response headers, bounded textual response bodies, transport/read errors, and locally blocked/cancelled attempts.
+- A unique request ID per attempt and shared operation ID across retries, plus challenge/worker/submission-ticket correlation.
+
+Use **HTTP trace** on a submission row to jump to its related attempts, or filter by path, worker, request ID, or failure. **Inspect** shows the full structured record. An HTTP `200` does not imply the flag was accepted: application errors are visible in the response preview and submission ledger. A `queued` trace has not yet been dispatched; a `blocked` one may never have reached the server.
+
+`http.jsonl` is a durable, redacted append-only trace. Request bodies are represented by field names with redacted values. Passwords/usernames from credential forms, session cookies, authorization headers, redirect query tokens, and encoded toast headers are not retained. Login response bodies are always omitted. Current session tokens and known submitted form values are scrubbed from text previews, including common URL/base64 encodings; Rhombus-shaped flags are also masked. Text bodies above 4 KiB, partial reads, binary bodies, and untyped bodies are omitted rather than dumped or partially leaked. Valid response bytes remain unchanged for the player client; premature EOF against a declared Content-Length is rejected rather than silently saving partial artifacts.
+
+**Reveal flags does not unredact the HTTP log.** Candidate values remain available in the separate private submission ledger when needed. Keep all run data private: arbitrary server text can contain other unrecognized sensitive information, and redaction is not a general-purpose secret detector. Old runs have no retrospective HTTP trace.
 
 ## Scheduling and configuration
 
@@ -137,14 +166,17 @@ Run directory:
 
 ```text
 run.json                 run state and stable challenge keys
-summary.json             solved / unsolved / needs_review / error / interrupted
+summary.json             solved / unsolved / stopped / needs_review / error / interrupted
 catalog.json             player-visible inventory, available before downloads finish
 live.json                heartbeat and current challenge states (no credentials/flags)
 challenges/<ID hash>/    challenge.json plus indexed attachments
 inbox/                   private manual candidate requests
 outbox/                  corresponding structured responses
 submissions.jsonl        SENSITIVE candidates and durable outcomes
-events.jsonl             readiness, rate limits, worker lifecycle (no candidate field)
+events.jsonl             readiness, rate limits, worker lifecycle, operator stop events
+http.jsonl               sanitized HTTP attempts/responses, timings, and correlation IDs
+control_requests/        scoped operator stop requests (separate from candidate inbox)
+control_results/         durable orchestrator acknowledgements/rejections
 ```
 
 Filesystem hashes prevent challenge-ID path traversal/collisions from slug normalization. Indexed attachment names avoid overwrite collisions. New run directories prevent accidental reuse of old inboxes/results.
@@ -185,7 +217,7 @@ Parent responds on stdin:
 {"request_id":"0","challenge_key":"ticket-trouble","status":"incorrect","message":"Incorrect flag"}
 ```
 
-One request is outstanding per worker; stdout is protocol-only. A winning response is attempted before terminating the race, but workers must also tolerate EOF/termination—the journal is authoritative. No listening submission endpoint or platform credential is exposed to workers. There is deliberately no configurable executable or real-agent integration in this version.
+Worker replies may also use `cancelled` when an operator stop prevents dispatch; that is not an incorrect-flag result. One request is outstanding per worker; stdout is protocol-only. A winning response is attempted before terminating the race, but workers must also tolerate EOF/termination—the journal is authoritative. No listening submission endpoint or platform credential is exposed to workers. There is deliberately no configurable executable or real-agent integration in this version.
 
 ## Verification
 
@@ -193,7 +225,7 @@ One request is outstanding per worker; stdout is protocol-only. A winning respon
 python -m unittest discover -s rhombus-player -p "test_*.py" -v
 ```
 
-Tests cover concurrent/streaming downloads, subprocess races and cleanup, visible submission queues, manual acceptance, seeded plans, timeout/cancellation, review persistence, HTTP-200 application errors, bounded 429 retries/shared cooldowns, remote/redirect refusal, and dashboard authentication/redaction/staleness. They use temporary folders and loopback servers, not the running demo's database.
+Tests cover concurrent/streaming downloads, subprocess races and cleanup, visible submission queues, manual acceptance, seeded plans, timeout/cancellation, review persistence, HTTP-200 application errors, bounded 429 retries/shared cooldowns, remote/redirect refusal, dashboard authentication/redaction/staleness, scoped real-subprocess stops, suppression of queued worker starts, late in-flight acceptance, and HTTP trace secrecy/correlation. They use temporary folders and loopback servers, not the running demo's database.
 
 Optional real-browser checks require the development-only Python `playwright` package and a Chromium-based browser. Neither is a runtime dependency:
 
@@ -204,4 +236,4 @@ $env:RHOMBUS_DASHBOARD_SCREENSHOTS = "$env:TEMP\rhombus-dashboard-preview"
 python -m unittest discover -s rhombus-player -p "test_*.py" -v
 ```
 
-Browser tests verify live updates, filters, masking/reveal, inert organizer HTML, CSP compatibility, and desktop/mobile overflow. Screenshots contain only test fixtures; they are not added to Git.
+Browser tests verify live updates, stop controls/acknowledgements, worker history, HTTP inspection, filters, masking/reveal, inert organizer HTML, CSP compatibility, and desktop/mobile overflow. Screenshots contain only test fixtures; they are not added to Git.

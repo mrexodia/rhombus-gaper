@@ -10,6 +10,11 @@ let limit = 100;
 let busy = false;
 let uplink = false;
 let revision = 0;
+let controlling = false;
+let showWorkerHistory = false;
+let httpFilter = 'all';
+let httpLimit = 100;
+let selectedRequest = null;
 
 function node(tag, className, text) {
   const element = document.createElement(tag);
@@ -19,7 +24,7 @@ function node(tag, className, text) {
 }
 const timeText = value => value ? new Date(value * 1000).toISOString().slice(11, 19) : '—';
 const display = value => String(value ?? '').replaceAll('_', ' ');
-const knownStatuses = new Set(['ready', 'solved', 'racing', 'correct', 'incorrect', 'in_flight', 'queued', 'active', 'error', 'unknown', 'needs_review', 'cooldown']);
+const knownStatuses = new Set(['ready', 'solved', 'racing', 'correct', 'incorrect', 'in_flight', 'queued', 'active', 'error', 'unknown', 'needs_review', 'cooldown', 'stopped', 'cancelled', 'acknowledged', 'completed', 'rejected', 'blocked']);
 function badge(status) { return node('span', 'badge ' + (knownStatuses.has(status) ? status : ''), display(status)); }
 function text(id, value) { $(id).textContent = value; }
 function empty(parent, message) { parent.append(node('div', 'empty', message)); }
@@ -46,6 +51,38 @@ function redactCached() {
   }
   snapshot = clean(snapshot);
 }
+function stopButton(label, payload, explanation) {
+  const button = node('button', 'danger compact', label);
+  button.type = 'button';
+  button.disabled = !snapshot?.can_control || !uplink || paused || controlling;
+  button.addEventListener('click', () => sendControl(payload, explanation));
+  return button;
+}
+async function sendControl(payload, explanation) {
+  if (!snapshot?.can_control || !uplink || paused || controlling) return;
+  if (!confirm(`${explanation}\n\nAlready-sent flag requests may still succeed. Downloads continue. This cannot be undone or restarted from the dashboard. Continue?`)) return;
+  controlling = true;
+  render();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  $('control-notice').hidden = false;
+  text('control-notice', 'Persisting operator stop request…');
+  try {
+    const response = await fetch('/api/control', {method: 'POST', headers: {
+      Authorization: `Bearer ${token}`, 'Content-Type': 'application/json',
+    }, body: JSON.stringify(payload), signal: controller.signal});
+    if (!response.ok) throw new Error(await response.text());
+    const result = await response.json();
+    text('control-notice', `${result.control_id.slice(0, 8)} / ${result.message}`);
+  } catch (error) {
+    text('control-notice', `Stop NOT confirmed: ${error.message}. Check the acknowledgements below before trying again.`);
+  } finally {
+    clearTimeout(timer);
+    controlling = false;
+    render();
+    poll();
+  }
+}
 function render() {
   if (!snapshot) return;
   const data = snapshot;
@@ -58,7 +95,8 @@ function render() {
   text('run-label', `${data.run_name} / ${data.source}`);
   text('connection', paused ? 'FEED PAUSED' : !uplink ? 'UPLINK LOST / RETRYING' : `${data.run_status.toUpperCase()} / UPLINK CONNECTED`);
   $('connection').className = 'connection' + (!uplink ? ' offline' : paused || data.run_status === 'stale' ? ' paused' : '');
-  text('updated', `Snapshot ${timeText(data.generated_at)} UTC · read-only`);
+  text('updated', `Snapshot ${timeText(data.generated_at)} UTC · ${data.can_control ? 'stop controls available' : 'controls unavailable'}`);
+  $('stop-all').disabled = !data.can_control || !uplink || paused || controlling;
   text('m-objectives', `${solved} / ${data.challenges.length}`);
   text('m-objectives-sub', 'Confirmed platform solves');
   $('completion').max = Math.max(1, data.challenges.length);
@@ -94,29 +132,36 @@ function render() {
     const bottom = node('div', 'card-bottom');
     bottom.append(node('span', '', `${c.submissions} candidates`), node('span', '', `${c.downloaded}/${c.files} files`));
     card.append(top, title, node('div', 'key', c.id), strip, bottom);
+    if (!['solved', 'stopped', 'unsolved', 'needs_review', 'error', 'interrupted'].includes(c.status)) {
+      card.append(stopButton('Stop race', {action: 'stop_challenge', challenge_key: c.id}, `Stop all current and queued workers for ${c.name}?`));
+    }
     grid.append(card);
   }
   if (!challenges.length) empty(grid, data.challenges.length ? 'No objectives match this filter.' : 'Awaiting challenge inventory…');
 
   const workers = $('workers');
   workers.replaceChildren();
-  text('worker-count', data.workers.length);
-  for (const w of data.workers.filter(w => matchesChallenge(w.challenge_key))) {
+  text('worker-count', showWorkerHistory ? data.worker_history.length : data.workers.length);
+  for (const w of (showWorkerHistory ? data.worker_history : data.workers).filter(w => matchesChallenge(w.challenge_key))) {
     const row = node('div', 'worker');
     const top = node('div', 'worker-top');
     top.append(node('span', 'cyan', w.worker), node('span', 'muted', `PID ${w.pid}`));
-    row.append(top, node('div', 'worker-bottom', `${names.get(w.challenge_key) || w.challenge_key} · ${w.status}`));
+    row.append(top, node('div', 'worker-bottom', `${names.get(w.challenge_key) || w.challenge_key} · ${display(w.status)}`));
+    row.append(node('div', 'worker-bottom', w.status === 'stopped' ? `Exit ${w.code} / ${display(w.reason)} / ${timeText(w.ended_at)} UTC` : `Started ${timeText(w.time)} UTC`));
+    if (w.status === 'active') {
+      row.append(stopButton('Stop worker', {action: 'stop_worker', challenge_key: w.challenge_key, worker: w.worker, pid: w.pid}, `Stop ${w.worker} (PID ${w.pid}) for ${names.get(w.challenge_key) || w.challenge_key}?`));
+    }
     workers.append(row);
   }
   if (!workers.children.length) empty(workers, 'No active workers in this view. Completed processes have been reaped.');
   const gateStatus = data.cooldown > 0 ? 'cooldown' : data.run_status === 'running' ? 'ready' : 'idle';
   $('gate-state').className = 'badge ' + gateStatus;
   text('gate-state', data.cooldown > 0 ? `${data.cooldown.toFixed(1)}s WAIT` : gateStatus.toUpperCase());
-  text('gate-caption', data.cooldown > 0 ? 'New requests deferred globally' : 'Submissions / 5-second buckets');
-  const end = Math.max(data.generated_at, ...data.submissions.map(s => s.time || 0));
+  text('gate-caption', data.cooldown > 0 ? 'New requests deferred globally' : 'HTTP requests / 5-second buckets');
+  const end = data.generated_at;
   const buckets = Array(32).fill(0);
-  for (const submission of data.submissions) {
-    const index = 31 - Math.floor((end - (submission.time || 0)) / 5);
+  for (const request of data.requests.filter(r => r.sent_at)) {
+    const index = 31 - Math.floor((end - request.sent_at) / 5);
     if (index >= 0 && index < 32) buckets[index]++;
   }
   const peak = Math.max(1, ...buckets);
@@ -132,6 +177,19 @@ function render() {
     const row = node('tr');
     const challenge = node('td', '', names.get(s.challenge_key) || s.challenge_key);
     challenge.append(node('span', 'subline', `${s.worker || 'unknown worker'} · ${s.ticket.slice(0, 8)}`));
+    const trace = node('button', 'compact trace-link', 'HTTP trace');
+    trace.type = 'button';
+    trace.disabled = !data.requests.some(r => r.submission_ticket === s.ticket);
+    trace.addEventListener('click', () => {
+      $('http-search').value = s.ticket;
+      httpFilter = 'all';
+      httpLimit = 100;
+      selectedRequest = data.requests.find(r => r.submission_ticket === s.ticket)?.request_id;
+      for (const button of document.querySelectorAll('[data-http-filter]')) button.setAttribute('aria-pressed', String(button.dataset.httpFilter === 'all'));
+      render();
+      $('http-detail').scrollIntoView({block: 'center'});
+    });
+    challenge.append(trace);
     const flag = node('td');
     flag.append(node('code', 'flag-value', $('reveal').checked ? (s.flag || '—') : '••••••••'));
     const outcome = node('td');
@@ -143,13 +201,58 @@ function render() {
   $('load-more').hidden = submissions.length <= limit;
   text('ledger-note', `${$('reveal').checked ? 'Sensitive flags revealed' : 'Flags masked'} · ${Math.min(limit, submissions.length)} rows shown · UTC timestamps`);
 
+  const controls = $('controls');
+  controls.replaceChildren();
+  for (const c of data.controls) {
+    const row = node('div', 'control-row');
+    row.append(node('time', 'muted', timeText(c.time)), badge(c.status),
+      node('span', '', `${display(c.action)} / ${c.challenge_key || 'all challenges'}${c.worker ? ' / ' + c.worker : ''}${c.pid ? ' / PID ' + c.pid : ''}`),
+      node('span', 'muted', c.message || 'Waiting for orchestrator acknowledgement…'));
+    controls.append(row);
+  }
+  if (!controls.children.length) empty(controls, 'No operator stop requests. Stopping a worker does not undo accepted submissions.');
+
+  const httpQuery = $('http-search').value.toLowerCase().trim();
+  const requests = data.requests.filter(r => (!query || matchesChallenge(r.challenge_key)) &&
+    (!httpQuery || [r.path, r.method, r.worker, r.challenge_key, r.request_id, r.operation_id, r.submission_ticket, r.status, r.error].join(' ').toLowerCase().includes(httpQuery)) &&
+    (httpFilter === 'all' || (httpFilter === 'errors' && (r.status >= 400 || ['error', 'blocked', 'unknown'].includes(r.stage))) ||
+      (httpFilter === 'pending' && ['queued', 'sent', 'response'].includes(r.stage))));
+  text('http-count', `${requests.length} / ${data.request_count}`);
+  const httpRows = $('http-requests');
+  httpRows.replaceChildren();
+  for (const r of requests.slice(0, httpLimit)) {
+    const row = node('tr', r.request_id === selectedRequest ? 'selected' : '');
+    const when = node('td', '', timeText(r.time));
+    when.append(node('span', 'subline', r.request_id.slice(0, 8)));
+    const target = node('td', 'http-path', `${r.method || '?'} ${r.path || '?'}${r.query ? '?[omitted]' : ''}`);
+    const status = node('td');
+    status.append(badge(r.status >= 400 || r.stage === 'error' ? 'error' : r.stage === 'blocked' ? 'blocked' : r.status ? 'ready' : 'queued'),
+      node('span', 'subline', `${r.status ? 'HTTP ' + r.status : 'No response headers'} / ${r.stage}`));
+    const timing = node('td', '', `#${r.attempt || 1} / ${r.latency_ms ?? '—'} ms headers`);
+    timing.append(node('span', 'subline', `${r.wait_ms ?? '—'} ms gate · ${r.duration_ms ?? '—'} ms total`));
+    const inspectCell = node('td');
+    const inspect = node('button', 'compact', 'Inspect');
+    inspect.type = 'button';
+    inspect.addEventListener('click', () => { selectedRequest = r.request_id; render(); });
+    inspectCell.append(inspect);
+    row.append(when, target, status, timing, node('td', '', `${r.worker || 'orchestrator'} / ${r.challenge_key || 'session or inventory'}`), inspectCell);
+    httpRows.append(row);
+  }
+  $('no-http').hidden = requests.length > 0;
+  $('http-more').hidden = requests.length <= httpLimit;
+  text('http-note', `${Math.min(httpLimit, requests.length)} attempts shown · each retry has its own request ID · full trace in http.jsonl`);
+  if (selectedRequest) {
+    const selected = data.requests.find(r => r.request_id === selectedRequest);
+    text('http-detail', selected ? JSON.stringify(selected, null, 2) : 'Request is not available in this snapshot. Inspect http.jsonl locally.');
+  }
+
   const events = $('events');
   const oldScroll = events.scrollTop;
   events.replaceChildren();
   for (const e of data.events.filter(e => !e.challenge_key || matchesChallenge(e.challenge_key))) {
     const kind = String(e.event || 'event');
     const row = node('div', 'event ' + (['rate_limit', 'solved', 'worker_timeout'].includes(kind) ? kind : kind.includes('error') ? 'error' : ''));
-    const details = [e.challenge_key, e.worker, e.file, e.message,
+    const details = [e.challenge_key, e.worker, e.file, e.message, e.reason, e.action,
       e.pid !== undefined ? `pid=${e.pid}` : null, e.wait !== undefined ? `wait=${e.wait.toFixed(2)}s attempt=${e.attempt}` : null,
       e.code !== undefined ? `exit=${e.code}` : null].filter(v => v !== undefined && v !== null).join(' / ');
     row.append(node('time', '', timeText(e.time)), node('span', 'event-type', kind), node('span', 'event-detail', details || 'Global orchestrator event'));
@@ -227,6 +330,23 @@ for (const button of document.querySelectorAll('[data-filter]')) {
   });
 }
 $('load-more').addEventListener('click', () => { limit += 100; render(); });
+$('stop-all').addEventListener('click', () => sendControl({action: 'stop_all'}, 'Stop ALL current and queued fake workers for this run?'));
+$('worker-history').addEventListener('click', () => {
+  showWorkerHistory = !showWorkerHistory;
+  $('worker-history').setAttribute('aria-pressed', String(showWorkerHistory));
+  text('worker-history', showWorkerHistory ? 'Show active' : 'Show history');
+  render();
+});
+$('http-search').addEventListener('input', () => { httpLimit = 100; render(); });
+$('http-more').addEventListener('click', () => { httpLimit += 100; render(); });
+for (const button of document.querySelectorAll('[data-http-filter]')) {
+  button.addEventListener('click', () => {
+    httpFilter = button.dataset.httpFilter;
+    httpLimit = 100;
+    for (const other of document.querySelectorAll('[data-http-filter]')) other.setAttribute('aria-pressed', String(other === button));
+    render();
+  });
+}
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && $('reveal').checked) {
     $('reveal').checked = false;

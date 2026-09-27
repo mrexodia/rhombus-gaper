@@ -21,6 +21,8 @@ TEST_FLAG = "rhombus{dashboard_test_fixture_only}"
 def populate(root):
     (root / "inbox").mkdir()
     (root / "outbox").mkdir()
+    (root / "control_requests").mkdir()
+    (root / "control_results").mkdir()
     catalog = [
         {"id": "clockwork", "name": "Clockwork Signatures", "category": "crypto", "attachments": [{"name": "capture.bin"}]},
         {"id": "ticket", "name": "Ticket Trouble", "category": "web", "attachments": []},
@@ -31,7 +33,7 @@ def populate(root):
     ]
     private_json(root / "catalog.json", catalog)
     private_json(root / "run.json", {"status": "running", "source": "http://127.0.0.1:3000", "challenge_keys": [c["id"] for c in catalog]})
-    private_json(root / "live.json", {"time": time.time(), "states": {"dns": {"status": "needs_review"}}})
+    private_json(root / "live.json", {"time": time.time(), "control_protocol": 1, "states": {"dns": {"status": "needs_review"}}})
     journal = Journal(root)
     for c in catalog:
         journal.record("ready", challenge_key=c["id"])
@@ -47,6 +49,11 @@ def populate(root):
     journal.record("result", ticket="win", status="correct", message="Challenge solved")
     journal.record("solved", challenge_key="layer", winner="steady-1")
     journal.record("rate_limit", wait=1.05, attempt=1)
+    journal.record("http_queued", request_id="http-1", operation_id="operation-1", method="POST", path="/challenges/ticket", attempt=1, worker="burst-0", challenge_key="ticket", form={"flag": "[redacted]"})
+    journal.record("http_sent", request_id="http-1", wait_ms=10, sent_at=time.time())
+    journal.record("http_response", request_id="http-1", status=429, latency_ms=15, response_headers={"retry-after": "1"})
+    journal.record("http_complete", request_id="http-1", bytes_read=17, read_complete=True, body_preview="Too many requests", duration_ms=26)
+    journal.record("http_queued", request_id="http-2", operation_id="operation-1", method="POST", path="/challenges/ticket", attempt=2, worker="burst-0", challenge_key="ticket")
     private_json(root / "inbox" / "manual.json", {"challenge_key": "dns", "flag": TEST_FLAG})
     private_json(root / "inbox" / "fresh.json", {"challenge_key": "echo", "flag": "manual-candidate"})
 
@@ -141,6 +148,35 @@ class HTTPTests(unittest.TestCase):
             headers["Authorization"] = "Bearer " + self.server.token
         return self.opener.open(urllib.request.Request(self.server.origin + path, headers=headers), timeout=5)
 
+    def post(self, value, *, token=True, origin=True):
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = "Bearer " + self.server.token
+        if origin:
+            headers["Origin"] = self.server.origin
+        return self.opener.open(urllib.request.Request(self.server.origin + "/api/control", data=json.dumps(value).encode(), headers=headers), timeout=5)
+
+    def test_control_auth_validation_and_stale_rejection(self):
+        command = {"action": "stop_worker", "challenge_key": "ticket", "worker": "burst-0", "pid": 4200}
+        for value, kwargs, code in [(command, {"token": False}, 401), (command, {"origin": False}, 403),
+                                     ({"action": "launch"}, {}, 400), ({**command, "pid": -1}, {}, 409),
+                                     ({**command, "command": "cmd.exe"}, {}, 400)]:
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                self.post(value, **kwargs)
+            self.assertEqual(caught.exception.code, code)
+            caught.exception.close()
+        self.assertFalse(list((self.root / "control_requests").glob("*.json")))
+        with self.post(command) as response:
+            self.assertEqual(response.status, 202)
+            result = json.load(response)
+        self.assertEqual(result["status"], "queued")
+        self.assertTrue((self.root / "control_requests" / (result["control_id"] + ".json")).exists())
+        private_json(self.root / "live.json", {"time": time.time() - 30, "control_protocol": 1})
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self.post({"action": "stop_all"})
+        self.assertEqual(caught.exception.code, 409)
+        caught.exception.close()
+
     def test_auth_origin_host_and_no_arbitrary_files(self):
         for path, headers, expected in [
             ("/api/state", {}, 401),
@@ -176,7 +212,7 @@ class BrowserTests(HTTPTests):
 
             def heartbeat():
                 while not stop.wait(0.5):
-                    private_json(self.root / "live.json", {"time": time.time(), "states": {"dns": {"status": "needs_review"}}})
+                    private_json(self.root / "live.json", {"time": time.time(), "control_protocol": 1, "states": {"dns": {"status": "needs_review"}}})
 
             pulse = threading.Thread(target=heartbeat, daemon=True)
             pulse.start()
@@ -190,6 +226,24 @@ class BrowserTests(HTTPTests):
                 self.assertEqual(page.locator(".challenge").count(), 6)
                 self.assertNotIn(TEST_FLAG, page.locator("body").inner_text())
                 self.assertNotIn("token=", page.url)
+                expect(page.locator('#http-count')).to_have_text('2 / 2')
+                page.get_by_role('button', name='HTTP failures', exact=True).click()
+                self.assertEqual(page.locator('#http-requests tr').count(), 1)
+                page.locator('#http-requests button').first.click()
+                expect(page.locator('#http-detail')).to_contain_text('Too many requests')
+                page.get_by_role('button', name='All requests', exact=True).click()
+                page.once('dialog', lambda dialog: dialog.accept())
+                page.locator('#workers button').first.click()
+                expect(page.locator('#controls')).to_contain_text('queued')
+                control_path = next((self.root / 'control_requests').glob('*.json'))
+                command = json.loads(control_path.read_text())
+                matched = {k: command[k] for k in ('challenge_key', 'worker', 'pid')}
+                private_json(self.root / 'control_results' / control_path.name, {'status': 'acknowledged', 'matched': [matched], 'time': time.time()})
+                Journal(self.root).record('worker_stopped', **matched, code=0, reason='operator_stop')
+                expect(page.locator('#controls')).to_contain_text('completed')
+                page.get_by_role('button', name='Show history', exact=True).click()
+                expect(page.locator('#workers')).to_contain_text('operator stop')
+                page.get_by_role('button', name='Show active', exact=True).click()
                 page.get_by_role("button", name="Queue", exact=True).click()
                 self.assertEqual(page.locator("#submissions tr").count(), 3)
                 page.get_by_role("button", name="Needs review", exact=True).click()

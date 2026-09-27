@@ -4,7 +4,7 @@ A dependency-free Python client for the **published, unmodified Rhombus web inte
 
 The player client never uses the admin API and never receives challenge answer keys.
 
-For the separate **local-only fake-worker orchestrator** and its **Signal // Command live web dashboard** (parallel downloads, subprocess races, submission queues, manual submissions, and durable operator review), see [ORCHESTRATOR.md](ORCHESTRATOR.md). Its optional private organizer replay fixtures are for simulation only, not part of the player client.
+For the separate **local-only fake-worker orchestrator** and its **Signal // Command live web dashboard** (parallel downloads, subprocess races, scoped worker-stop controls, HTTP request/response traces, submission queues, manual submissions, and durable operator review), see [ORCHESTRATOR.md](ORCHESTRATOR.md). Its optional private organizer replay fixtures are for simulation only, not part of the player client.
 
 ## Requirements
 

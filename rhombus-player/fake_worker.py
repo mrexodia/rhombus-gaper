@@ -32,7 +32,7 @@ def main():
         if not line:
             return
         result = json.loads(line)
-        if result["status"] in {"correct", "already_solved", "error"}:
+        if result["status"] in {"correct", "already_solved", "error", "cancelled"}:
             return
 
 

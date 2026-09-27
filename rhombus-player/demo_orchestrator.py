@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import getpass
 import hashlib
+import http.client
 import json
 import math
 import os
@@ -19,6 +20,13 @@ import urllib.request
 import uuid
 
 from rhombus_player import RhombusAPI, RhombusError, RateLimitError, _safe_filename
+from http_telemetry import CONTEXT, RequestCancelled, Trace
+
+CONTROL_FIELDS = {
+    "stop_worker": {"action", "challenge_key", "worker", "pid"},
+    "stop_challenge": {"action", "challenge_key"},
+    "stop_all": {"action"},
+}
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -43,8 +51,10 @@ class Gate:
         self.blocked = False
         self.lock = threading.Lock()
 
-    def wait(self):
+    def wait(self, cancel=None):
         while True:
+            if cancel is not None and cancel.is_set():
+                raise RequestCancelled("operator stopped this worker before request admission")
             with self.lock:
                 if self.blocked:
                     raise RhombusError("request admission stopped: server cooldown exceeds the demo wait budget")
@@ -86,7 +96,8 @@ class Journal:
 
     def record(self, kind, **fields):
         # Candidate flags go only to submissions.jsonl, not the general event log.
-        name = "submissions.jsonl" if kind in {"queued", "pending", "result"} else "events.jsonl"
+        name = ("http.jsonl" if kind.startswith("http_") else
+                "submissions.jsonl" if kind in {"queued", "pending", "result"} else "events.jsonl")
         with self.lock:
             fd = os.open(self.root / name, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
             with os.fdopen(fd, "a", encoding="utf-8") as stream:
@@ -109,13 +120,19 @@ class LocalAPI(RhombusAPI):
         request_headers = {"User-Agent": "rhombus-demo-orchestrator/1", "Accept-Language": "en", **(headers or {})}
         if authenticated and self.token:
             request_headers["Cookie"] = "rhombus-token=" + self.token
+        operation_id = uuid.uuid4().hex
         for attempt in range(self.max_retries + 1):
-            self.gate.wait()
             request = urllib.request.Request(url, data=data, headers=request_headers)
+            trace = Trace(self.journal, request, attempt + 1, operation_id, self.token)
+            try:
+                self.gate.wait(CONTEXT.get().get("cancel"))
+            except Exception as error:
+                trace.failure(error, blocked=True)
+                raise
             # Per-call opener: no shared mutable urllib state between threads.
             opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
             try:
-                return opener.open(request, timeout=self.timeout)
+                return trace.open(opener, self.timeout)
             except urllib.error.HTTPError as error:
                 try:
                     if error.code != 429:
@@ -163,6 +180,11 @@ class Orchestrator:
         self.submissions = set()
         self.review = set()
         self.children = set()
+        self.handles = {}
+        self.stopped_workers = set()
+        self.stopped_challenges = set()
+        self.stop_all = False
+        self.control_error = None
         self.closing = False
 
     async def submit(self, key, flag, worker, request_id):
@@ -190,8 +212,10 @@ class Orchestrator:
             notify_review(error)
             return {**result, "status": "error", "message": "journal failure; submission not sent"}
         async with self.locks[key]:
-            if self.solved[key].is_set():
-                result.update(status="already_solved", message="race finished; candidate not validated")
+            cancelled = worker != "operator" and self.worker_stopped(key, worker)
+            if self.solved[key].is_set() or cancelled:
+                result.update(status="cancelled" if cancelled else "already_solved",
+                              message="operator stop; candidate not sent" if cancelled else "race finished; candidate not validated")
                 try:
                     self.journal.record("result", ticket=ticket, **result)
                 except OSError as error:
@@ -204,13 +228,20 @@ class Orchestrator:
                 # Do not send anything when the recovery intent cannot be made durable.
                 notify_review(error)
                 return {**result, "status": "error", "message": "journal failure; submission not sent"}
+            handle = self.handles.get((key, worker), {})
+            context = CONTEXT.set({"challenge_key": key, "worker": worker, "submission_ticket": ticket,
+                                   "cancel": handle.get("cancel")})
             try:
                 answer = await asyncio.to_thread(self.api.submit_flag, key, flag)
                 result.update(status="correct" if answer.correct else "incorrect", message=answer.message)
+            except RequestCancelled as error:
+                result.update(status="cancelled", message=str(error))
             except Exception as error:
                 result.update(status="error", message=str(error))
                 # Never misreport network errors as wrong flags.
                 notify_review(error)
+            finally:
+                CONTEXT.reset(context)
             try:
                 self.journal.record("result", ticket=ticket, **result)
             except OSError as error:
@@ -228,7 +259,11 @@ class Orchestrator:
     async def download(self, attachment, destination, key):
         async with self.download_slots:
             self.journal.record("download_started", challenge_key=key, file=destination.name)
-            await asyncio.to_thread(self.api.download_attachment, attachment, destination)
+            context = CONTEXT.set({"challenge_key": key})
+            try:
+                await asyncio.to_thread(self.api.download_attachment, attachment, destination)
+            finally:
+                CONTEXT.reset(context)
             self.journal.record("download_finished", challenge_key=key, file=destination.name,
                                 bytes=destination.stat().st_size)
 
@@ -255,17 +290,20 @@ class Orchestrator:
                     task.cancel()
                 await asyncio.gather(*workers, return_exceptions=True)
             if not self.solved[key].is_set():
-                self.states[key] = {"status": "needs_review" if key in self.review else "unsolved"}
+                stopped_count = sum(k == key for k, _ in self.stopped_workers)
+                stopped = self.stop_all or key in self.stopped_challenges or stopped_count == len(self.profiles)
+                self.states[key] = {"status": "needs_review" if key in self.review else "stopped" if stopped else "unsolved",
+                                    "operator_stopped_workers": stopped_count}
         except Exception as error:
             self.states[key] = {"status": "error", "message": str(error)}
             self.journal.record("challenge_error", challenge_key=key, message=str(error))
 
     async def worker(self, manifest, profile, index):
         key = manifest["challenge_key"]
+        worker = f"{profile}-{index}"
         async with self.process_slots:
-            if self.solved[key].is_set():
+            if self.solved[key].is_set() or self.worker_stopped(key, worker):
                 return
-            worker = f"{profile}-{index}"
             spawning = asyncio.create_task(asyncio.create_subprocess_exec(
                 sys.executable, "-I", str(Path(__file__).with_name("fake_worker.py").resolve()),
                 stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
@@ -285,8 +323,14 @@ class Orchestrator:
                     proc.stdin.close()
                 raise
             self.children.add(proc)
+            handle = {"proc": proc, "stop": asyncio.Event(), "cancel": threading.Event(), "done": asyncio.Event()}
+            self.handles[(key, worker)] = handle
+            if self.worker_stopped(key, worker):
+                handle["stop"].set()
+                handle["cancel"].set()
             self.journal.record("worker_started", challenge_key=key, worker=worker, pid=proc.pid)
-            driver = winner = None
+            driver = winner = stopper = None
+            reason = "exited"
             try:
                 # Deliberate simulation fixture, not a solved flag discovered from the artifact.
                 job = {**manifest, "profile": profile, "seed": self.seed,
@@ -309,15 +353,29 @@ class Orchestrator:
 
                 driver = asyncio.create_task(drive())
                 winner = asyncio.create_task(self.solved[key].wait())
-                done, _ = await asyncio.wait({driver, winner}, timeout=self.worker_timeout,
+                stopper = asyncio.create_task(handle["stop"].wait())
+                done, _ = await asyncio.wait({driver, winner, stopper}, timeout=self.worker_timeout,
                                             return_when=asyncio.FIRST_COMPLETED)
-                if driver in done:
+                if stopper in done:
+                    reason = "operator_stop"
+                elif winner in done:
+                    reason = "challenge_solved"
+                elif driver in done:
                     driver.result()
-                elif not done:
+                    if proc.returncode not in (None, 0):
+                        reason = "error"
+                        self.journal.record("worker_error", challenge_key=key, worker=worker,
+                                            message=f"Worker exited with code {proc.returncode}")
+                else:
+                    reason = "timeout"
                     self.journal.record("worker_timeout", challenge_key=key, worker=worker)
             except (BrokenPipeError, ConnectionResetError):
-                pass
+                reason = "pipe_closed"
+            except asyncio.CancelledError:
+                reason = "interrupted"
+                raise
             except Exception as error:
+                reason = "error"
                 self.journal.record("worker_error", challenge_key=key, worker=worker, message=str(error))
             finally:
                 if proc.returncode is None:
@@ -326,14 +384,80 @@ class Orchestrator:
                     except ProcessLookupError:
                         pass
                 await proc.wait()
-                for task in (driver, winner):
+                for task in (driver, winner, stopper):
                     if task is not None:
                         task.cancel()
-                await asyncio.gather(*(t for t in (driver, winner) if t is not None), return_exceptions=True)
+                await asyncio.gather(*(t for t in (driver, winner, stopper) if t is not None), return_exceptions=True)
                 if proc.stdin:
                     proc.stdin.close()
                 self.children.discard(proc)
-                self.journal.record("worker_stopped", challenge_key=key, worker=worker, code=proc.returncode)
+                self.handles.pop((key, worker), None)
+                handle["done"].set()
+                self.journal.record("worker_stopped", challenge_key=key, worker=worker,
+                                    pid=proc.pid, code=proc.returncode, reason=reason)
+
+    def worker_stopped(self, key, worker):
+        return self.stop_all or key in self.stopped_challenges or (key, worker) in self.stopped_workers
+
+    def apply_control(self, value):
+        action = value.get("action")
+        key, worker, pid = value.get("challenge_key"), value.get("worker"), value.get("pid")
+        if action not in CONTROL_FIELDS or set(value) - {"time"} != CONTROL_FIELDS[action]:
+            raise ValueError("unsupported control action or fields")
+        if action != "stop_all" and key not in self.challenges:
+            raise ValueError("unknown challenge")
+        if action == "stop_worker":
+            handle = self.handles.get((key, worker))
+            if type(pid) is not int or not handle or handle["proc"].pid != pid or handle["proc"].returncode is not None:
+                raise ValueError("worker/PID no longer active; refresh before stopping")
+            targets = [((key, worker), handle)]
+        elif action == "stop_challenge":
+            targets = [(identity, h) for identity, h in self.handles.items() if identity[0] == key]
+        else:
+            targets = list(self.handles.items())
+        # Persist the accepted intent before changing process state.
+        self.journal.record("operator_stop", action=action, challenge_key=key, worker=worker, pid=pid,
+                            matched_workers=len(targets))
+        if action == "stop_challenge":
+            self.stopped_challenges.add(key)
+        elif action == "stop_all":
+            self.stop_all = True
+        matched = []
+        for (challenge_key, worker_name), handle in targets:
+            self.stopped_workers.add((challenge_key, worker_name))
+            handle["cancel"].set()
+            handle["stop"].set()
+            matched.append({"challenge_key": challenge_key, "worker": worker_name, "pid": handle["proc"].pid})
+        return {"status": "acknowledged", "matched": matched,
+                "message": "Stop acknowledged. Watch worker exits; already-sent requests may still complete."}
+
+    async def control_inbox(self):
+        try:
+            await self._control_loop()
+        except Exception as error:
+            self.control_error = str(error)
+            print(f"Operator controls unavailable: {error}", file=sys.stderr, flush=True)
+            try:
+                self.journal.record("control_error", message=str(error))
+            except OSError:
+                pass
+
+    async def _control_loop(self):
+        while not self.closing:
+            for path in sorted((self.root / "control_requests").glob("*.json")):
+                result_path = self.root / "control_results" / path.name
+                if result_path.exists():
+                    continue
+                try:
+                    if path.is_symlink():
+                        raise ValueError("symlink control requests are not allowed")
+                    value = json.loads(path.read_text(encoding="utf-8"))
+                    result = self.apply_control(value)
+                except Exception as error:
+                    result = {"status": "rejected", "message": str(error), "matched": []}
+                private_json(result_path, {**result, "time": time.time()})
+                self.journal.record("control_result", control_id=path.stem, status=result["status"], message=result["message"])
+            await asyncio.sleep(0.1)
 
     async def manual_inbox(self):
         while not self.closing:
@@ -350,7 +474,9 @@ class Orchestrator:
 
     async def heartbeat(self):
         while not self.closing:
-            private_json(self.root / "live.json", {"time": time.time(), "pid": os.getpid(), "states": self.states})
+            private_json(self.root / "live.json", {"time": time.time(), "pid": os.getpid(), "states": self.states,
+                                                   "control_protocol": 0 if self.control_error else 1,
+                                                   "control_error": self.control_error, "stop_all": self.stop_all})
             await asyncio.sleep(1)
 
     async def run(self):
@@ -362,10 +488,13 @@ class Orchestrator:
             self.solved[c.id] = asyncio.Event()
             self.locks[c.id] = asyncio.Lock()
             self.states[c.id] = {"status": "downloading"}
+        for name in ("control_requests", "control_results"):
+            (self.root / name).mkdir(mode=0o700, exist_ok=True)
         private_json(self.root / "catalog.json", [c.to_dict() for c in challenges])
         private_json(self.root / "run.json", {"status": "running", "source": self.api.base_url,
                                               "challenge_keys": list(self.challenges)})
         pulse = asyncio.create_task(self.heartbeat())
+        controls = asyncio.create_task(self.control_inbox())
         inbox = asyncio.create_task(self.manual_inbox())
         tasks = [asyncio.create_task(self.challenge(c)) for c in challenges]
         try:
@@ -374,9 +503,10 @@ class Orchestrator:
             self.closing = True
             inbox.cancel()
             pulse.cancel()
+            controls.cancel()
             for task in tasks:
                 task.cancel()
-            await asyncio.gather(inbox, pulse, *tasks, return_exceptions=True)
+            await asyncio.gather(inbox, pulse, controls, *tasks, return_exceptions=True)
             # A started POST can still complete after its worker exits. Preserve its outcome.
             if self.submissions:
                 await asyncio.gather(*list(self.submissions), return_exceptions=True)
@@ -512,7 +642,7 @@ def main(argv=None):
     except KeyboardInterrupt:
         print("Interrupted; review the private run journal for pending submissions.", file=sys.stderr)
         return 130
-    except (OSError, ValueError, RhombusError, KeyError) as error:
+    except (OSError, ValueError, RhombusError, KeyError, http.client.HTTPException) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
 
