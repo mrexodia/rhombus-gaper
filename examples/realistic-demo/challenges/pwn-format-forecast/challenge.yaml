@@ -9,8 +9,11 @@ description: |
 
   Download the supplied 64-bit Linux ELF. No memory corruption or shellcode is required.
 flag: rhombus{format_strings_can_read_the_room}
-score_type: static
-points: 325
+score_type: dynamic
+dynamic:
+  initial: 325
+  minimum: 65
+  decay: 20
 files:
   - src: format-forecast
     dst: format-forecast

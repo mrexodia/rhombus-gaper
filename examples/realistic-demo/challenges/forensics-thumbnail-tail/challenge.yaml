@@ -7,8 +7,11 @@ description: |
 
   Recover the incident note from the complete file.
 flag: rhombus{files_can_have_more_than_one_ending}
-score_type: static
-points: 175
+score_type: dynamic
+dynamic:
+  initial: 175
+  minimum: 35
+  decay: 20
 files:
   - src: recovered-thumbnail.png
     dst: recovered-thumbnail.png

@@ -7,8 +7,11 @@ description: |
 
   Reconstruct the encoded command associated with task `TelemetryRepair` and identify the exfiltration marker it generated.
 flag: rhombus{utf16le_hides_in_plain_sight}
-score_type: static
-points: 225
+score_type: dynamic
+dynamic:
+  initial: 225
+  minimum: 45
+  decay: 20
 files:
   - src: windows-events.jsonl
     dst: windows-events.jsonl

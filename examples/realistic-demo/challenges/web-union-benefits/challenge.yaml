@@ -9,7 +9,10 @@ description: |
 
   Retrieve the restricted note. Destructive SQL is neither needed nor permitted.
 flag: rhombus{parameterize_every_database_query}
-score_type: static
-points: 275
+score_type: dynamic
+dynamic:
+  initial: 275
+  minimum: 55
+  decay: 20
 files: []
 healthscript: http://127.0.0.1:8083/health

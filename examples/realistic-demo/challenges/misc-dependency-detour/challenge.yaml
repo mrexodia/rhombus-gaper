@@ -7,8 +7,11 @@ description: |
 
   Nothing needs to be installed or executed.
 flag: rhombus{typosquatting_the_build_pipeline}
-score_type: static
-points: 250
+score_type: dynamic
+dynamic:
+  initial: 250
+  minimum: 50
+  decay: 20
 files:
   - src: vendor-cache.zip
     dst: vendor-cache.zip

@@ -9,8 +9,11 @@ description: |
 
   Download the supplied 64-bit Linux ELF. The service uses the exact same binary. ASLR is enabled on the host, but the executable itself is not PIE.
 flag: rhombus{ret2win_makes_the_stack_sing}
-score_type: static
-points: 300
+score_type: dynamic
+dynamic:
+  initial: 300
+  minimum: 60
+  decay: 20
 files:
   - src: echo-service
     dst: echo-service

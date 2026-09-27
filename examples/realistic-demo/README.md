@@ -2,7 +2,7 @@
 
 A local Rhombus instance with sixteen solvable challenges and deliberate decoy flags.
 
-| Challenge | Category | Points | Runtime |
+| Challenge | Category | Starting points | Runtime |
 |---|---:|---:|---|
 | Ticket Trouble | Web | 150 | Docker, port 8081 |
 | Forwarded Forgery | Web | 175 | Docker, port 8082 |
@@ -20,6 +20,14 @@ A local Rhombus instance with sixteen solvable challenges and deliberate decoy f
 | Thumbnail Tail | Forensics | 175 | Static artifact |
 | Commitment Issues | Misc | 125 | Static artifact |
 | Dependency Detour | Misc | 250 | Static artifact |
+
+## Dynamic scoring
+
+All sixteen challenges use quadratic dynamic scoring. The table lists their starting values; each challenge has a minimum of **20% of its starting value** and reaches that floor at **20 team solves**, counted across divisions. Earlier solvers' scores decrease too.
+
+For example, Ticket Trouble starts at 150 points, is worth 120 after 10 solves, and reaches its 30-point minimum after 20 solves. Integer rounding can leave the value unchanged on some solves.
+
+Changing an existing demo from static to dynamic does not delete accounts or solves. Rhombus preserves each existing challenge's current stored points on reload; its next accepted solve applies the dynamic curve using the accumulated solve count and adjusts prior solvers' totals. Fresh databases use the configured starting values immediately.
 
 ## Start on Windows (PowerShell)
 

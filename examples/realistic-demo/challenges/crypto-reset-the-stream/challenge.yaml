@@ -11,8 +11,11 @@ description: |
 
   All ciphertexts are hex encoded in the attachment. A short script is recommended.
 flag: rhombus{never_reuse_a_stream_cipher_nonce}
-score_type: static
-points: 200
+score_type: dynamic
+dynamic:
+  initial: 200
+  minimum: 40
+  decay: 20
 files:
   - src: transmissions.txt
     dst: transmissions.txt

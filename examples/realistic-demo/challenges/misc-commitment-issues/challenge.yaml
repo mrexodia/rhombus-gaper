@@ -7,8 +7,11 @@ description: |
 
   Determine what was removed. You do not need network access or any remote Git hosting.
 flag: rhombus{deleted_does_not_mean_gone}
-score_type: static
-points: 125
+score_type: dynamic
+dynamic:
+  initial: 125
+  minimum: 25
+  decay: 20
 files:
   - src: project-backup.zip
     dst: project-backup.zip

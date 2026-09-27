@@ -9,8 +9,11 @@ description: |
 
   No brute force or automated scanning is needed. Browser developer tools or `curl` are enough.
 flag: rhombus{idor_means_someone_elses_ticket}
-score_type: static
-points: 150
+score_type: dynamic
+dynamic:
+  initial: 150
+  minimum: 30
+  decay: 20
 files: []
 healthscript: http://127.0.0.1:8081/health
 ticket_template: |

@@ -7,8 +7,11 @@ description: |
 
   Recover the accepted input from the supplied x86-64 ELF. Static analysis is sufficient.
 flag: rhombus{native_code_still_has_rules}
-score_type: static
-points: 325
+score_type: dynamic
+dynamic:
+  initial: 325
+  minimum: 65
+  decay: 20
 files:
   - src: badge-checker
     dst: badge-checker

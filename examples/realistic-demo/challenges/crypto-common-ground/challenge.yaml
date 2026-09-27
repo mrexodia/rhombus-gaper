@@ -7,8 +7,11 @@ description: |
 
   Find the key-generation failure and decrypt the real enrollment message. One unrelated record is included as noise.
 flag: rhombus{shared_primes_share_private_keys}
-score_type: static
-points: 275
+score_type: dynamic
+dynamic:
+  initial: 275
+  minimum: 55
+  decay: 20
 files:
   - src: enrollments.json
     dst: enrollments.json
