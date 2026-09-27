@@ -2,7 +2,9 @@
 
 A dependency-free Python client for the **published, unmodified Rhombus web interface**. It logs in through the normal credentials form, lists the challenges visible to that player, and downloads attachments into organized folders.
 
-It never uses the admin API and never receives challenge answer keys.
+The player client never uses the admin API and never receives challenge answer keys.
+
+For the separate **local-only fake-worker orchestrator** (parallel downloads, subprocess races, manual submissions, and durable operator review), see [ORCHESTRATOR.md](ORCHESTRATOR.md). Its optional private organizer replay fixtures are for simulation only, not part of the player client.
 
 ## Requirements
 
