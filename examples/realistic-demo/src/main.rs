@@ -15,6 +15,10 @@ async fn main() {
     let app = rhombus::Builder::default()
         .load_env()
         .config_source(rhombus::config::File::with_name("config"))
+        // This demo only listens on loopback. Router::serve does not attach
+        // Axum ConnectInfo, so provide the known local client IP explicitly;
+        // the optional per-IP rate limiter then has a stable key to enforce.
+        .extractor(|_, _| Some(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)))
         .plugin(ChallengeLoaderPlugin::new(PathBuf::from("challenges")))
         .build()
         .await

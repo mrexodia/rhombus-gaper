@@ -55,6 +55,12 @@ Stop Rhombus with Ctrl+C, then stop the challenge services:
 docker compose down
 ```
 
+## Enabled platform features
+
+The local demo exercises credentials registration, team/division creation, per-IP request tracking, the optional token-bucket rate limiter, challenge health checks, local attachment uploads, in-memory caching, flag submissions, scoring, and the root API key. The limiter permits a burst of 12 requests and replenishes one every 100ms.
+
+Integrations that require real third-party credentials or infrastructure—Discord, email, CTFtime OAuth, S3, and remote databases—remain disabled deliberately.
+
 ## Organizer notes
 
 - `solutions/` contains reference solvers and spoilers.

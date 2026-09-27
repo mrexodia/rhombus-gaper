@@ -9,7 +9,11 @@ jwt_secret: local-demo-only-rotate-before-deploying-8f4d1b9c2a7e6d3f
 root_api_key: local-demo-root-key-change-before-deploying
 contact_email: organizers@example.invalid
 in_memory_cache: 10
-ip_preset: peer-ip
+ratelimit:
+  # Per-IP token bucket: allow a short burst, then replenish one request
+  # every 100ms. The player CLI honors Retry-After when this returns HTTP 429.
+  per_millisecond: 100
+  burst_size: 12
 uploads:
   local:
     folder: uploads
