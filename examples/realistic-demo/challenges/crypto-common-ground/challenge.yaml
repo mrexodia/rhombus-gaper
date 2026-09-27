@@ -1,0 +1,14 @@
+stable_id: common-ground
+name: Common Ground
+author: signal-ridge
+category: crypto
+description: |
+  A fleet provisioning service generated RSA keys during an entropy-starved boot. Three public keys and encrypted enrollment messages were recovered.
+
+  Find the key-generation failure and decrypt the real enrollment message. One unrelated record is included as noise.
+flag: rhombus{shared_primes_share_private_keys}
+score_type: static
+points: 275
+files:
+  - src: enrollments.json
+    dst: enrollments.json

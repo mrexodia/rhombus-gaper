@@ -1,0 +1,39 @@
+# Local development configuration. Do not deploy these secrets publicly.
+# yaml-language-server: $schema=../../schema.json
+title: Signal Ridge CTF
+organizer: Signal Ridge Security Club
+description: A realistic practice CTF with sixteen challenges across six categories.
+location_url: http://localhost:3000
+database_url: file://realistic-demo.db
+jwt_secret: local-demo-only-rotate-before-deploying-8f4d1b9c2a7e6d3f
+root_api_key: local-demo-root-key-change-before-deploying
+contact_email: organizers@example.invalid
+in_memory_cache: 10
+ip_preset: peer-ip
+uploads:
+  local:
+    folder: uploads
+auth:
+  - credentials
+divisions:
+  - stable_id: open
+    name: Open
+    description: Anyone may play. Teams of up to four are recommended.
+    max_players: 4
+home:
+  content: |
+    # Welcome to Signal Ridge CTF
+
+    This local practice event contains **sixteen real, solvable challenges** across web, binary exploitation, cryptography, reverse engineering, forensics, and misc.
+
+    ## Rules
+
+    - Only attack the services and files supplied with this demo.
+    - The live targets are bound to your own machine (`127.0.0.1`).
+    - Flags use the format `rhombus{...}`.
+    - Plausible-looking flags may be decoys. Submit only a flag justified by solving the intended weakness.
+    - Organizer writeups are in `solutions/`; avoid that directory while playing.
+
+    Create a credentials account, form a team, and start with the lower-point challenges.
+terms: |
+  This instance is for local, authorized practice only. Do not expose intentionally vulnerable services to an untrusted network.

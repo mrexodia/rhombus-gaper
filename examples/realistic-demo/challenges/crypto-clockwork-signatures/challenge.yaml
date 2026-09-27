@@ -1,0 +1,14 @@
+stable_id: clockwork-signatures
+name: Clockwork Signatures
+author: signal-ridge
+category: crypto
+description: |
+  A hardware wallet signs audit statements with ECDSA on secp256k1. Two signatures were produced immediately after a clock reset, and the encrypted recovery record was captured with them.
+
+  Recover the signing secret, then derive the XOR pad as `SHA-256(private_key_as_32_big_endian_bytes)`, repeating that 32-byte digest as needed.
+flag: rhombus{reused_ecdsa_nonces_reveal_the_key}
+score_type: static
+points: 375
+files:
+  - src: signatures.json
+    dst: signatures.json

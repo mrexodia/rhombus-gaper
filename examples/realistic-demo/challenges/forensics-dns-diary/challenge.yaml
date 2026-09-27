@@ -1,0 +1,14 @@
+stable_id: dns-diary
+name: DNS Diary
+author: signal-ridge
+category: forensics
+description: |
+  A workstation triggered a low-volume DNS alert shortly before an incident. Analysts captured a small slice of traffic, but a quick `strings` search produced conflicting evidence.
+
+  Reconstruct the ordered data hidden in the suspicious DNS queries. Wireshark is convenient, but the PCAP is small enough to parse with standard tools.
+flag: rhombus{dns_labels_can_tell_a_story}
+score_type: static
+points: 250
+files:
+  - src: workstation.pcap
+    dst: workstation.pcap

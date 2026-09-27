@@ -1,0 +1,14 @@
+stable_id: layer-cake
+name: Layer Cake
+author: signal-ridge
+category: rev
+description: |
+  Incident response recovered a PowerShell loader from a scheduled task. It never contacts the network in this sample, but it constructs an operator token through several reversible layers.
+
+  Analyze the script without executing it and recover the final token.
+flag: rhombus{obfuscation_is_not_encryption}
+score_type: static
+points: 200
+files:
+  - src: updater.ps1
+    dst: updater.ps1

@@ -1,0 +1,1 @@
+rhombus{format_strings_can_read_the_room}

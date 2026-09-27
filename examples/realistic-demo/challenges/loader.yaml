@@ -1,0 +1,24 @@
+categories:
+  - stable_id: web
+    name: Web
+    color: "#22c55e"
+  - stable_id: pwn
+    name: Binary Exploitation
+    color: "#ef4444"
+  - stable_id: crypto
+    name: Cryptography
+    color: "#f59e0b"
+  - stable_id: rev
+    name: Reverse Engineering
+    color: "#3b82f6"
+  - stable_id: forensics
+    name: Forensics
+    color: "#06b6d4"
+  - stable_id: misc
+    name: Miscellaneous
+    color: "#a855f7"
+authors:
+  - stable_id: signal-ridge
+    name: Signal Ridge Challenge Team
+    avatar: https://www.gravatar.com/avatar/00000000000000000000000000000000?d=identicon
+    discord_id: 1

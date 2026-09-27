@@ -1,0 +1,6 @@
+/uploads/
+/realistic-demo.db*
+/*.log
+/platform.pid
+/platform-home.html
+__pycache__/

@@ -1,0 +1,5 @@
+{"time": "2026-05-14T02:13:01Z", "event_id": 4688, "user": "ACME\\backup", "process": "powershell.exe", "command_line": "powershell -File C:\\Ops\\backup.ps1"}
+{"time": "2026-05-14T02:14:19Z", "event_id": 1116, "provider": "Defender", "message": "Training indicator rhombus{eicar_pipeline_test}"}
+{"time": "2026-05-14T02:15:02Z", "event_id": 4698, "task": "TelemetryRepair", "action": "powershell.exe -NoProfile -EncodedCommand JABhAD0AJwByAGgAbwBtAGIAdQBzAHsAdQB0AGYAMQA2ACcAOwAkAGIAPQAnAGwAZQBfAGgAaQBkAGUAcwBfAGkAbgBfACcAOwAkAGMAPQAnAHAAbABhAGkAbgBfAHMAaQBnAGgAdAB9ACcAOwBXAHIAaQB0AGUALQBPAHUAdABwAHUAdAAgACgAJABhACsAJABiACsAJABjACkA"}
+{"time": "2026-05-14T02:15:03Z", "event_id": 4104, "task": "TelemetryRepair", "script_block": "powershell.exe -NoP -enc JABhAD0AJwByAGgAbwBtAGIAdQBzAHsAdQB0AGYAMQA2ACcAOwAkAGIAPQAnAGwAZQBfAGgAaQBkAGUAcwBfAGkAbgBfACcAOwAkAGMAPQAnAHAAbABhAGkAbgBfAHMAaQBnAGgAdAB9ACcAOwBXAHIAaQB0AGUALQBPAHUAdABwAHUAdAAgACgAJABhACsAJABiACsAJABjACkA"}
+{"time": "2026-05-14T02:17:40Z", "event_id": 4689, "user": "ACME\\backup", "process": "powershell.exe", "exit_code": 0}

@@ -1,0 +1,15 @@
+stable_id: union-benefits
+name: Union Benefits
+author: signal-ridge
+category: web
+description: |
+  The asset inventory API supports searching by owner. A rushed migration replaced the query builder with string formatting, and an internal asset note is not visible to the guest account.
+
+  **Target:** [http://127.0.0.1:8083](http://127.0.0.1:8083)
+
+  Retrieve the restricted note. Destructive SQL is neither needed nor permitted.
+flag: rhombus{parameterize_every_database_query}
+score_type: static
+points: 275
+files: []
+healthscript: http://127.0.0.1:8083/health

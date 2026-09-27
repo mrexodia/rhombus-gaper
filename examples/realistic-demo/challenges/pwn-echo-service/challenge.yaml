@@ -1,0 +1,19 @@
+stable_id: echo-service
+name: Echo Service
+author: signal-ridge
+category: pwn
+description: |
+  A legacy network appliance still runs Acme's "safe" echo daemon. Its developers left a diagnostic routine in the production binary.
+
+  **Target:** `nc 127.0.0.1 1337`
+
+  Download the supplied 64-bit Linux ELF. The service uses the exact same binary. ASLR is enabled on the host, but the executable itself is not PIE.
+flag: rhombus{ret2win_makes_the_stack_sing}
+score_type: static
+points: 300
+files:
+  - src: echo-service
+    dst: echo-service
+  - src: echo-service.c
+    dst: echo-service.c
+healthscript: tcp://127.0.0.1:1337

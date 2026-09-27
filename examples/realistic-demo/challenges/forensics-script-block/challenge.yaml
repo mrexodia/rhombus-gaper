@@ -1,0 +1,14 @@
+stable_id: script-block
+name: Script Block Party
+author: signal-ridge
+category: forensics
+description: |
+  The SOC exported a narrow window of Windows PowerShell and process-creation events after a suspicious scheduled task fired. Antivirus test data and administrator activity create noise.
+
+  Reconstruct the encoded command associated with task `TelemetryRepair` and identify the exfiltration marker it generated.
+flag: rhombus{utf16le_hides_in_plain_sight}
+score_type: static
+points: 225
+files:
+  - src: windows-events.jsonl
+    dst: windows-events.jsonl

@@ -1,0 +1,14 @@
+stable_id: commitment-issues
+name: Commitment Issues
+author: signal-ridge
+category: misc
+description: |
+  Operations sent us a project archive after noticing that a production secret had briefly been committed. The developer says the file was deleted immediately, so there is nothing left to investigate.
+
+  Determine what was removed. You do not need network access or any remote Git hosting.
+flag: rhombus{deleted_does_not_mean_gone}
+score_type: static
+points: 125
+files:
+  - src: project-backup.zip
+    dst: project-backup.zip

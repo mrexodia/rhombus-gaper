@@ -1,0 +1,21 @@
+{
+  "curve": "secp256k1",
+  "public_key": {
+    "x": "0x3386195fa97c1dbbd7d1fb90f13b34cd35399ec68cb1ea6fc7c7a6dec5aea62d",
+    "y": "0xb9afc134751845be59bb0004a64febe306bea4b9b06b0bfc8939a96d1db3cd45"
+  },
+  "signatures": [
+    {
+      "message": "approve audit batch 184",
+      "r": "0xc38ad093a05242700889e7c12c9bb31b419023876c590ae08e5e288d241767",
+      "s": "0xe647c59d64b18c811b73da5a4a5a38f143556d22d75d087db4ce54c628547c53"
+    },
+    {
+      "message": "approve recovery export 185",
+      "r": "0xc38ad093a05242700889e7c12c9bb31b419023876c590ae08e5e288d241767",
+      "s": "0x55a8e17eb84f61985006b444ca495ce56844944661a1ab3b40f2a5f4e4f68161"
+    }
+  ],
+  "encrypted_recovery_record": "a386b6c63611100b4a2e851f04819564ccda8308111fed4f020fd74730b677b4b08286df3c013c1b5d328d",
+  "operator_note": "rhombus{signature_validation_test_record}"
+}

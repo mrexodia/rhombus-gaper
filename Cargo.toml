@@ -9,6 +9,7 @@ members = [
     "examples/plugin",
     "examples/external-plugin",
     "examples/demo",
+    "examples/realistic-demo",
     "examples/custom-grpc",
 ]
 

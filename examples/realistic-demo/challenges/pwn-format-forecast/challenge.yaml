@@ -1,0 +1,17 @@
+stable_id: format-forecast
+name: Format Forecast
+author: signal-ridge
+category: pwn
+description: |
+  A weather telemetry daemon helpfully echoes station names into its report. The secret is already in memory; the challenge is convincing the program to disclose it.
+
+  **Target:** `nc 127.0.0.1 1338`
+
+  Download the supplied 64-bit Linux ELF. No memory corruption or shellcode is required.
+flag: rhombus{format_strings_can_read_the_room}
+score_type: static
+points: 325
+files:
+  - src: format-forecast
+    dst: format-forecast
+healthscript: tcp://127.0.0.1:1338

@@ -1,0 +1,18 @@
+stable_id: reset-the-stream
+name: Reset the Stream
+author: signal-ridge
+category: crypto
+description: |
+  An embedded sensor encrypts each outgoing message with a stream cipher, but a reboot appears to reset more than its sequence counter. Recover the secret transmission.
+
+  The first plaintext is known to be exactly:
+
+  `KNOWN: packet[0]=telemetry-v1; status=nominal; seq=0001`
+
+  All ciphertexts are hex encoded in the attachment. A short script is recommended.
+flag: rhombus{never_reuse_a_stream_cipher_nonce}
+score_type: static
+points: 200
+files:
+  - src: transmissions.txt
+    dst: transmissions.txt

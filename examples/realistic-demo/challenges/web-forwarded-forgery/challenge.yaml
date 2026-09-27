@@ -1,0 +1,15 @@
+stable_id: forwarded-forgery
+name: Forwarded Forgery
+author: signal-ridge
+category: web
+description: |
+  Acme's deployment dashboard is behind a reverse proxy. Administrators restricted the diagnostics endpoint to requests originating from localhost, but the application may be trusting the wrong source of truth.
+
+  **Target:** [http://127.0.0.1:8082](http://127.0.0.1:8082)
+
+  Normal HTTP tooling is sufficient. Do not scan outside this service.
+flag: rhombus{forwarded_headers_are_user_input}
+score_type: static
+points: 175
+files: []
+healthscript: http://127.0.0.1:8082/health

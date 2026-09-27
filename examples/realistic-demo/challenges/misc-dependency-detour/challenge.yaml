@@ -1,0 +1,14 @@
+stable_id: dependency-detour
+name: Dependency Detour
+author: signal-ridge
+category: misc
+description: |
+  A build agent executed an unexpected lifecycle script after installing dependencies from an offline package cache. Review the cache, identify the package that does not belong, and reconstruct the value its install script would beacon.
+
+  Nothing needs to be installed or executed.
+flag: rhombus{typosquatting_the_build_pipeline}
+score_type: static
+points: 250
+files:
+  - src: vendor-cache.zip
+    dst: vendor-cache.zip

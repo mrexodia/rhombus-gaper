@@ -1,0 +1,55 @@
+services:
+  ticket-trouble:
+    image: rhombus-realistic-demo-ticket-trouble:local
+    build: ./services/web
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8081:8081"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/health')"]
+      interval: 5s
+      timeout: 2s
+      retries: 5
+
+  forwarded-forgery:
+    image: rhombus-realistic-demo-forwarded-forgery:local
+    build: ./services/web-forwarded
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8082:8082"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8082/health')"]
+      interval: 5s
+      timeout: 2s
+      retries: 5
+
+  union-benefits:
+    image: rhombus-realistic-demo-union-benefits:local
+    build: ./services/web-union
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8083:8083"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8083/health')"]
+      interval: 5s
+      timeout: 2s
+      retries: 5
+
+  echo-service:
+    image: rhombus-realistic-demo-echo-service:local
+    build: ./services/pwn
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1337:1337"
+
+  format-forecast:
+    image: rhombus-realistic-demo-format-forecast:local
+    build: ./services/pwn-format
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1338:1338"
+
+  native-checker-artifact:
+    image: rhombus-realistic-demo-native-checker:local
+    build: ./services/rev-native
+    profiles: ["build-only"]

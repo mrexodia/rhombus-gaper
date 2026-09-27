@@ -1,0 +1,14 @@
+stable_id: native-dance
+name: Native Dance
+author: signal-ridge
+category: rev
+description: |
+  The Linux badge updater validates an offline maintenance code. The vendor removed symbols and embedded several old test tokens, but the real comparison still has to happen somewhere.
+
+  Recover the accepted input from the supplied x86-64 ELF. Static analysis is sufficient.
+flag: rhombus{native_code_still_has_rules}
+score_type: static
+points: 325
+files:
+  - src: badge-checker
+    dst: badge-checker

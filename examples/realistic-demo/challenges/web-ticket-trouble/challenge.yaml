@@ -1,0 +1,18 @@
+stable_id: ticket-trouble
+name: Ticket Trouble
+author: signal-ridge
+category: web
+description: |
+  The Acme support portal recently added a JSON API. You have been given guest access, but another ticket may contain something the incident-response team did not intend to share.
+
+  **Target:** [http://127.0.0.1:8081](http://127.0.0.1:8081)
+
+  No brute force or automated scanning is needed. Browser developer tools or `curl` are enough.
+flag: rhombus{idor_means_someone_elses_ticket}
+score_type: static
+points: 150
+files: []
+healthscript: http://127.0.0.1:8081/health
+ticket_template: |
+  ## Ticket Trouble support request
+  What endpoint and ticket IDs have you tried?

@@ -1,0 +1,64 @@
+# Signal Ridge CTF — realistic local demo
+
+A local Rhombus instance with sixteen solvable challenges and deliberate decoy flags.
+
+| Challenge | Category | Points | Runtime |
+|---|---:|---:|---|
+| Ticket Trouble | Web | 150 | Docker, port 8081 |
+| Forwarded Forgery | Web | 175 | Docker, port 8082 |
+| Union Benefits | Web | 275 | Docker, port 8083 |
+| Echo Service | Pwn | 300 | Docker, port 1337 |
+| Format Forecast | Pwn | 325 | Docker, port 1338 |
+| Reset the Stream | Crypto | 200 | Static artifact |
+| Common Ground | Crypto | 275 | Static artifact |
+| Clockwork Signatures | Crypto | 375 | Static artifact |
+| Bytecode Breakout | Reverse engineering | 225 | Static artifact |
+| Layer Cake | Reverse engineering | 200 | Static artifact |
+| Native Dance | Reverse engineering | 325 | Static artifact |
+| DNS Diary | Forensics | 250 | Static artifact |
+| Script Block Party | Forensics | 225 | Static artifact |
+| Thumbnail Tail | Forensics | 175 | Static artifact |
+| Commitment Issues | Misc | 125 | Static artifact |
+| Dependency Detour | Misc | 250 | Static artifact |
+
+## Start on Windows (PowerShell)
+
+From this directory:
+
+```powershell
+python tools/build_artifacts.py
+python tools/build_native_artifacts.py
+docker compose up -d
+$env:PROTOC = "$HOME\.local\rhombus-tools\protoc\bin\protoc.exe"
+$env:PATH = "$HOME\.local\rhombus-tools\deno;$HOME\.local\rhombus-tools\protoc\bin;$env:PATH"
+cargo run -p realistic-demo
+```
+
+Then open <http://localhost:3000>, create a credentials account, and form a team.
+
+## Start on Linux/macOS
+
+Install Rust, Deno, Protocol Buffers (`protoc`), Python 3, Git, and Docker. Then:
+
+```sh
+python3 tools/build_artifacts.py
+python3 tools/build_native_artifacts.py
+docker compose up -d
+cargo run -p realistic-demo
+```
+
+## Stop
+
+Stop Rhombus with Ctrl+C, then stop the challenge services:
+
+```sh
+docker compose down
+```
+
+## Organizer notes
+
+- `solutions/` contains reference solvers and spoilers.
+- All generated artifacts are deterministic. Re-run `tools/build_artifacts.py` after editing their source data.
+- `tools/build_native_artifacts.py` extracts the exact ELF files used by the native pwn/reversing challenges.
+- The platform and vulnerable services bind only to `127.0.0.1` by default.
+- `config.yaml` contains intentionally disposable local secrets. Rotate them before any non-local deployment.

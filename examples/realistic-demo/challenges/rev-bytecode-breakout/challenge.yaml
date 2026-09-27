@@ -1,0 +1,14 @@
+stable_id: bytecode-breakout
+name: Bytecode Breakout
+author: signal-ridge
+category: rev
+description: |
+  A contractor shipped only a Python bytecode license checker and claimed that hiding the source made the validation algorithm secret.
+
+  Recover the accepted license string. The artifact was built with Python 3.11. Dynamic execution is optional; Python's `dis` module is enough.
+flag: rhombus{bytecode_is_not_a_black_box}
+score_type: static
+points: 225
+files:
+  - src: license_checker.pyc
+    dst: license_checker.pyc

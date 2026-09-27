@@ -1,0 +1,14 @@
+stable_id: thumbnail-tail
+name: Thumbnail Tail
+author: signal-ridge
+category: forensics
+description: |
+  A disk-carving tool recovered a valid PNG thumbnail with unexplained trailing bytes. Metadata inspection produces a convincing answer, but the case notes say the operator used the file as a container.
+
+  Recover the incident note from the complete file.
+flag: rhombus{files_can_have_more_than_one_ending}
+score_type: static
+points: 175
+files:
+  - src: recovered-thumbnail.png
+    dst: recovered-thumbnail.png
